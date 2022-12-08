@@ -418,3 +418,83 @@ bool Uart::isr() {
   return xHigherPriorityWoken;
 }
 ```
+# Lec 6
+
+## More about locking ...
+
+- FreeRTOS API calls are thread safe (naturally)
+    - For example sending to or receiving from a queue does not require
+locking to function correctly
+- Sometimes locking is needed to enforce a usage policy on a higher
+abstraction level
+    - Consider a case where ISR receives characters from UART and sends
+    them to queue
+        - Getting data from a queue does not require locking to work
+        correctly but we may wish to give callers exclusive access to the
+        queue for successive reads
+```c
+int readline(char * line, int len) {
+  /*
+  Mutex guarantees that caller
+  can read the line without other
+  tasks ”stealing” characters
+  from receive queue.
+  */
+  take mutex
+  while (count < maxlen) {
+    read from queue
+    increment count
+    break on linefeed
+  }
+  give mutex
+  return count
+}
+```
+## FreeRTOS stacks
+
+- FreeRTOS allocates a private stack space for each created task
+- Task stack space is used for local variables, function calls and to store
+context when task is switched from running state to other state (ready,
+blocked)
+    - Saving the context requires 16 x 4 bytes = 64 bytes
+    - Function calls may require 40 bytes of RAM just to save the callee
+saved registers. Local variables and parameters come on top of that
+- FreeRTOS minimal stack space 128 x 4 bytes is as the name states
+minimal and enough only for small tasks that do not use library functions
+- C/C++ library calls require that stack space is increased over bare
+minimum
+- Kernel aware debuggers can display task stack usage statistics
+
+- FreeRTOS maintains a separate stack for tasks and interrupts on Cortex-
+M3
+    - MSP for interrupts
+    - PSP for tasks
+- Task stacks are allocated when a task is created and when a context
+switch occurs the new running tasks stack pointer is set to PSP
+- Interrupts use the stack allocated by the compiler
+    - This is the same stack that main() uses before schuler starts
+    - When the scheduler starts the stack is reset and it is used for interrupts
+    → with FreeRTOS any stack based variable in `main()` will not be
+    accessible after scheduler is started
+
+## Guidelines for good realtime performance
+- [x] Analyze your response time requirements :tada:
+- [x] Let OS do the waiting :tada:
+
+1. Use blocking system calls
+    - **Rule of thumb**: If you have a blocking system call you don’t need any
+additional delays (explicit delays increase your task response time)
+
+2. Analyze where your program spends most of it’s time (and why)
+    - **Rule of thumb**: If single task is using more than 50% of the CPU time
+then check if you have busy waits/polling to eliminate
+
+3. If you can’t use blocking calls check if it possible to change the code to use
+blocking calls
+
+4. If you must poll then wait or yield to give other tasks a chance to execute
+    - Match the wait time with the frequency to the events that you poll
+        - **Rule of thumb**: wait time must be equal to (or lower than) the time
+between events that you poll
+    - Yield gives up the rest of your current time slice
+
