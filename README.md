@@ -1,4 +1,13 @@
-# Lec 1
+# freeRTOS Notes
+## Menu:
+1. [Lecture 1](#Lecture1)
+2. [Lecture 2](#Lecture2)
+3. [Lecture 3](#Lecture3)
+4. [Lecture 4](#Lecture4)
+5. [Lecture 5](#Lecture5)
+6. [Lecture 6](#Lecture6)
+7. [Lecture 7](#Lecture7)
+# Lecture1
 ## Multitasking in a single core environment
 
 ### Switching form one process to another is called context switch
@@ -60,7 +69,7 @@ interrupted by other threads the operation is said to be atomic
     - Atomic operations form the basis of thread locking mechanisms and are
 usually used to implement mutual exclusion primitives
 
-# Lec 2
+# Lecture2
 ## Task management
 - When a task is created the kernel allocates memory for the
 task
@@ -125,7 +134,7 @@ the blocked task
         - give(useQueue)
         - give(emptyCount)
 
-# Lec 3
+# Lecture3
 
 ## Simple server system
 - Two key parameters:
@@ -177,7 +186,7 @@ an unexpected moment
     - Always check the return values from memory allocation and queue
     read/write to know if your operation was successfull
 
-# Lec 4
+# Lecture4
 
 ### Two processor modes
 
@@ -278,7 +287,7 @@ instructions (ldrex/strex)
     - Include <stdatomic.h> for convenience macros, for example: atomic_int
     - GCC uses ldrex/strex on Cortex-M3
 
-# Lec 5
+# Lecture5
 
 ## Syncronization with binary semaphores
 
@@ -418,7 +427,7 @@ bool Uart::isr() {
   return xHigherPriorityWoken;
 }
 ```
-# Lec 6
+# Lecture6
 
 ## More about locking ...
 
@@ -498,7 +507,7 @@ blocking calls
 between events that you poll
     - Yield gives up the rest of your current time slice
 
-# Lec 7
+# Lecture7
 
 ## Event bits
 
@@ -610,7 +619,7 @@ new job from master
 another round of jobs to tasks
 >       - `xEventGroupWaitBits()` – with `xClearOnExit = pdTRUE`
 
-# Lec 8
+# Lecture8
 
 ## Timers
 ...
