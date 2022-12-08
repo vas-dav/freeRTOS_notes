@@ -498,3 +498,114 @@ blocking calls
 between events that you poll
     - Yield gives up the rest of your current time slice
 
+# Lec 7
+
+## Event bits
+
+- Event bits, or flags as they are often called, are used to indicate if an event
+has occurred or not
+- A single event can be communicated between tasks or task and ISR with a
+binary semaphore
+    - Always use OS mechanisms for communication!
+- When a task needs to syncronize to multiple events or multiple tasks need
+to synchronize to single event the complexity of the required code
+increases with the number of binary semaphores used
+- Multiple event can easily be mapped into bits of a single word. For
+example:
+    - Bit 0 is set when program initialization is complete
+    - Bit 1 is set when a heartbeat message needs to sent to network
+    - Bit 2 is set when a client is connected. Etc.
+- A common challenge with setting, clearing or monitoring individual bits is
+avoiding race conditions (see read-modify-write challenges)
+
+## Event groups
+
+- FreeRTOS provides API for creating and managing event groups
+- An event group is a set of event bits. Event bits within an event group are
+referenced by a bit number
+    - The number of bits available in an event group depends on FreeRTOS
+    configuration and is either 8 or 24. The configuration option is
+    configUSE_16_BIT_TICKS. On a 32-bit CPU it is typically 0 which
+    means that 24 event bits are available per event group. Setting the
+    option makes sense only on 8/16 bit CPUs that are a dying breed on
+    modern embedded systems
+- FreeRTOS ensures that event bit management is atomic
+    - Testing, setting or clearing any number of event bits in a single OS call
+    is atomic
+
+![eg1](./event_group_1.png)
+
+- Task can wait on any number of event bits
+    - Bits can be combined with:
+        - AND – all specified bits must be set to end wait
+        - OR – if any of the specified bits is set the wait ends
+- Multiple tasks can wait on the same event group
+    - They can wait on same bits or different bits
+- When bits are set multiple tasks that wait on those bits can be unblocked
+
+```c
+/**
+ * @param xEventGroup 
+ * @param uxBitsToWaitFor 
+ * @param xClearOnExit      Clear bits on exit if condition is met
+ * @param xWaitForAllBits   AND -> pdTRUE OR -> pdFALSE
+ * @param xTicksToWait      Max time to wait for condition to be met
+ */
+EventBits_t xEventGroupWaitBits(const EventGroupHandle_t xEventGroup,
+                                const EventBits_t uxBitsToWaitFor,
+                                const BaseType_t xClearOnExit,
+                                const BaseType_t xWaitForAllBits,
+                                TickType_t xTicksToWait );
+```
+
+## Avoiding non-determinism
+
+- FreeRTOS quality standards dictate that actions that are performed with
+interrupts disabled or within an ISR must be deterministic
+    - The number of tasks that are blocked on event group is not known thus
+    unblocking operation is not deterministic
+- Schedulers locking mechanism is used to ensure that interrupts remain
+enabled when an event bit is set from a task context
+- Event bits can’t be directly set from an ISR
+    - The API call to set event bits from an ISR defers setting the bit to a
+    daemon task
+    - The daemon task can perform non-deterministic operations because it
+    runs in a task context (see above)
+    - The daemon task is started by the OS but is scheduled the same way
+    as user tasks. The priority of the daemon task is configurable and may
+    be pre-empted by a higher priority task!
+        - The daemon task also manages timers
+
+## Soem usage scenarios
+
+### Case 1
+>- Wait for initialization
+>   - Event group is created before scheduler starts
+>   - Task 1 performs initialization of hardware and/or device drivers. When
+>   initialization is complete the task sets an event bit to notify other tasks
+>       - `xEventGroupSetBits()`
+>   - Tasks 2 – n wait on the event bit before they start running
+>       - `xEventGroupWaitBits()`
+>- Wait for initialization 2
+>   - Event group is created before scheduler starts
+>   - Tasks are numbered: 0 – n, each task uses a dedicated bit in the event
+    group
+>   - Each task initializes its own resources. When a task has completed the
+    initialization it sets the event bit of its own number and then waits until
+    all bits 0 – n are set
+>       - `xEventGroupSync()`
+
+### Case 2
+> - Synchronized execution completed before sending a new set of jobs to tasks
+>   - One master task sends jobs to other tasks and waits until all tasks have
+>   - Master task sends jobs and waits on a number of event bits that is
+>   equal to the number of started jobs. Master task clears event bits when
+>   all bits are set
+>   - Worker tasks wait for master to send jobs (for example on a queue)
+>   - Worker tasks each have a dedicated bit in the event group. They set
+the event bit when the finnish processing and then go back to wait for a
+new job from master
+>       - `xEventSetBits()`
+>   - Master is unblocked when all expected bits are set and then sends
+another round of jobs to tasks
+>       - `xEventGroupWaitBits()` – with `xClearOnExit = pdTRUE`
