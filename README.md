@@ -299,4 +299,121 @@ and only minimal processing remains in the ISR
 ![How to synchonize a task with an ISR](./sync_task_with_isr.png)
 ![How to synchonize a task with an ISR](./sync_task_with_isr_2.png)
 
+## Cortex-M3 interrupt handling
 
+- There are three places where interrupts/exceptions can be enabled or
+disabled
+    - Processor core (PRIMASK register)
+        - Can prevent all exceptions except for Reset, NMI, and Hard Fault
+    - Priority based masking (BASEPRI register)
+        - Prevents all interrupts with the same or lower priority as BASEPRI
+        value
+- NVIC
+    - Enable/disable specific interrupts (regardless of assigned priority)
+    - Used with peripherals
+- FreeRTOS takes care of handling PRIMASK and BASEPRI
+- Use FreeRTOS API to enable/disable interrupts if you need to
+    - Normally avoid enabling/disabling all interrupts
+    - If there is a need to disable interrupts is let FreeRTOS handle it
+    - Use OS calls for syncronization, message passing etc.
+    - Usually device driver writer needs to enable/disable interrupts on NVIC
+## Cortex-M3 interrupt handling and FreeRTOS
+- FreeRTOS does not provide API for managing NVIC (Cortex-M3 interrupt
+controller)
+    - Enabling/disabling interrupts on NVIC is frequently needed when
+    working with peripherals
+    - NVIC allows enabling/disabling interrupts from a specific device
+- FreeRTOS allows you to write ISRs that will never be disabled by the
+kernel
+----
+- When FreeRTOS kernel enters (an internal) critical section it uses
+BASEPRI to mask interrupts
+- The highest priority that FreeRTOS kernel disables is defined in
+FreeRTOSConfig.h
+- `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` tells the
+highest priority that will disabled by the kernel
+- Interrupts that make FreeRTOS calls must run on priority that is equal to or
+lower than `configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY`
+- Number of priority levels depends on the ARM variant. Our LPC1549
+implements 8 priority levels (3 priority bits)
+- A lower number means higher priority so your own interrupts should run at
+`configLIBRARY_MAX_SYSCALL_INTERRUPT_PRIORITY` (+offset of
+your choice)
+- Beware of overflow – a big offset may cause an overflow that makes
+your interrupt run on a priority that FreeRTOS does not manage
+----
+
+## LPC1549 peripherals and interrupts
+
+- Initialize peripheral
+    - Turns on clocking and power to the device
+    - Init-function can be found in the chip library (or read the processor
+    manual – the ultimate source of information)
+- Configure peripheral
+    - Functions are in the chip library
+    - Which of them to call requires reading the manual and maybe looking
+    at the library function implementation
+- Write an ISR
+    - Check from the manual what you need to do to acknowledge the
+    interrupt
+    - Do things that don’t require much processing (for example: get received
+    data from the hardware)
+- Do the rest in a task
+    - Start peripheral operation
+    - For example: protocol stack, data processing, ...
+
+## Example of a (complex) ISR
+
+```c
+extern "C" {
+  void UART0_IRQHandler(void) {
+    portEND_SWITCHING_ISR(u0 -> isr());
+  }
+}
+void Uart::receive() {
+  int status;
+  status = u -> LSR;
+  while (status & LSR_RECEIVE) {
+    if (!rx.put(u -> RBR)) dropped++;
+    if (status & LSR_RECEIVE_ERROR) {
+      error++;
+    }
+    status = u -> LSR;
+  }
+}
+void Uart::transmit() {
+  int count;
+  char ch;
+  for (count = 0; count < FIFO_SIZE; count++) {
+    if (tx.get(ch)) {
+      u -> THR = ch;
+    } else {
+      break;
+    }
+  }
+}
+
+bool Uart::isr() {
+  portBASE_TYPE xHigherPriorityWoken = pdFALSE;
+  bool rcv = false;
+  int status;
+  do {
+    status = u -> IIR & INTR_ID_MASK;
+    if (status & INTR_RCV_AVAIL) { // any type of receive event
+      receive();
+      rcv = true;
+    }
+    if (status == INTR_XMT_EMPT) {
+      if (tx.empty()) {
+        u -> IER = RXINT; // disable TXINT if buffer is empty
+      } else {
+        transmit();
+      }
+    }
+  } while (status != INTR_NOTHING);
+  if (rcv) {
+    xSemaphoreGiveFromISR(uart_binary, & xHigherPriorityWoken);
+  }
+  return xHigherPriorityWoken;
+}
+```
