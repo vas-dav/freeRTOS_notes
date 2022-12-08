@@ -609,3 +609,8 @@ new job from master
 >   - Master is unblocked when all expected bits are set and then sends
 another round of jobs to tasks
 >       - `xEventGroupWaitBits()` – with `xClearOnExit = pdTRUE`
+
+# Lec 8
+
+## Timers
+...
