@@ -11,6 +11,7 @@ computations of the process
 
 ## Process states
 
+- Running - process is running
 - Ready – waiting to be
 scheduled to execute
 - Blocked – process is not ready
